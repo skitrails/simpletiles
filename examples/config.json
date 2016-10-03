@@ -1,0 +1,6 @@
+[
+  {
+    "urlprefix" : "tile",
+    "mapnikconfig" : "map.xml"
+  }
+]
