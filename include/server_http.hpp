@@ -1,6 +1,9 @@
 #ifndef SERVER_HTTP_HPP
 #define	SERVER_HTTP_HPP
 
+#include <sys/socket.h>
+#define BOOST_ASIO_OS_DEF_SO_REUSEPORT SO_REUSEPORT
+
 #include <boost/asio.hpp>
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -146,6 +149,11 @@ namespace SimpleWeb {
                 endpoint=boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), config.port);
             acceptor.open(endpoint.protocol());
             acceptor.set_option(boost::asio::socket_base::reuse_address(config.reuse_address));
+
+            // CUSTOM REUSE OPTION
+            acceptor.set_option(
+                boost::asio::detail::socket_option::boolean<
+                    BOOST_ASIO_OS_DEF(SOL_SOCKET), BOOST_ASIO_OS_DEF(SO_REUSEPORT)>(true));
             acceptor.bind(endpoint);
             acceptor.listen();
      

@@ -1,6 +1,7 @@
 # `simpletiles` - a simple tileserver
 
-This is a `mapnik`-based tileserver.
+This is a `mapnik`-based tileserver.  It's designed to serve up a single mapnik XML file.
+Put it behind a reverse proxy and run multiple instances in order to serve multiple maps.
 
 # Fetures
 
@@ -15,33 +16,12 @@ This is a `mapnik`-based tileserver.
 
 # Usage
 
-`./simpletiles`
+`./tileserver yourmap.xml`
 
-# Configuration
-
-Example `config.json` file:
-
-```
-[
-  {
-    "urlprefix" : "tile",
-    "mapnikconfig" : "map.xml"
-  }
-]
-```
-
-The config file contains an array of objects with `urlprefix` and `mapnikconfig` properties.
-`urlprefix` is a simple name matching the regex `[a-z]+`.
-`mapnikconfig` is a filename for a `mapnik` XML file.
-
-Tiles become available at `http://localhost:8080/urlprefix/z/x/y.png`
+Tiles become available at `http://localhost:8080/z/x/y.png`
 
 # Reloading
 
 You can send `SIGHUP` to the process and it will re-load the config files and re-initialize
 the cached `mapnik` instances.  There will be a slight pause in request handling (a few milliseconds),
 but no requests should be dropped.
-
-# Caches and processing pools
-
-TODO - configurable cache and pool sizes

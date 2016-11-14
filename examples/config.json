@@ -1,6 +1,4 @@
 [
-  {
-    "urlprefix" : "tile",
-    "mapnikconfig" : "map.xml"
-  }
+  { "urlprefix" : "tile", "mapnikconfig" : "map.xml" },
+  { "urlprefix" : "amenities", "mapnikconfig" : "amenities.xml" }
 ]

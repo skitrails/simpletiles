@@ -24,10 +24,17 @@
 			id: 'mapbox.streets'
 		}).addTo(mymap);
 
-		L.tileLayer('http://localhost:8080/tile/{z}/{x}/{y}.png', {
+		L.tileLayer('http://localhost:8080/{z}/{x}/{y}.png', {
 			maxZoom: 18,
 			attribution: 'SkiTrails LLC '
 		}).addTo(mymap);
+
+/*
+		L.tileLayer('http://localhost:8080/amenities/{z}/{x}/{y}.png', {
+			maxZoom: 18,
+			attribution: 'SkiTrails LLC '
+		}).addTo(mymap);
+        */
 
 	</script>
 </body>
