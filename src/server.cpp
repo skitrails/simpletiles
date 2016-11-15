@@ -44,11 +44,11 @@ constexpr double ORIGIN_SHIFT = EARTH_CIRCUMFERENCE / 2;
 
 struct TileCoordinate
 {
-    unsigned long x, y, z;
+    unsigned long x, y, z, scale;
 
     bool operator==(const TileCoordinate &other) const
     {
-        return (x == other.x && y == other.y && z == other.z);
+        return (x == other.x && y == other.y && z == other.z && scale == other.scale);
     }
 };
 
@@ -59,8 +59,9 @@ template <> struct hash<TileCoordinate>
     size_t operator()(const TileCoordinate &coord) const
     {
         // x,y,z are never very big values
-        return (static_cast<size_t>(coord.x) << 32) + (static_cast<size_t>(coord.y) << 16) +
-               coord.z;
+        return (static_cast<std::uint64_t>(coord.x) << 32) +
+               (static_cast<std::uint64_t>(coord.y) << 16) +
+               (static_cast<std::uint64_t>(coord.z) << 8) + coord.scale;
     }
 };
 }
@@ -165,12 +166,13 @@ class TileCache
         }
         catch (const lru11::KeyNotFound &e)
         {
-            mapnik::image_rgba8 im(256, 256);
+            mapnik::image_rgba8 im(256 * tile.scale, 256 * tile.scale);
             const auto bbox = getTileBox(tile);
 
             {
                 // Grab a map from the pool
                 auto map = map_pool.pop();
+                map->resize(256 * tile.scale, 256 * tile.scale);
                 map->zoom_to_box(bbox);
                 mapnik::agg_renderer<mapnik::image_rgba8> renderer(*map, im);
                 renderer.apply();
@@ -221,14 +223,20 @@ struct Server
           cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads)))
     {
 
-        server.resource["^/([0-9]+)/([0-9]+)/([0-9]+).png$"]
+        server.resource["^/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid)$"]
                        ["GET"] = [this](std::shared_ptr<HttpServer::Response> response,
                                         std::shared_ptr<HttpServer::Request> request) {
 
             // std::clog << request->path_match[0] << std::endl;
-            auto z = std::stoul(request->path_match[1]);
-            auto x = std::stoul(request->path_match[2]);
-            auto y = std::stoul(request->path_match[3]);
+            const auto z = std::stoul(request->path_match[1]);
+            const auto x = std::stoul(request->path_match[2]);
+            const auto y = std::stoul(request->path_match[3]);
+            const auto scale = [&]() {
+                if (request->path_match.length(5) > 0)
+                    return std::stoul(request->path_match[5]);
+                return 1ul;
+            }();
+            const auto format = request->path_match[6];
 
             bool out_of_bounds = (z < 1 || z > 21);
             if (!out_of_bounds)
@@ -240,12 +248,15 @@ struct Server
 
             if (out_of_bounds)
             {
-                *response << "HTTP/1.1 400 Bad Request\r\n\r\nInvalid tile coordinates";
+                std::string content = "Invalid tile coordinates";
+                *response << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << content.length()
+                          << "\r\n\r\n"
+                          << content;
                 return;
             }
 
             // We found a handler, let's use it
-            std::string buffer = cache->getTile({x, y, z});
+            std::string buffer = cache->getTile({x, y, z, scale});
             *response << "HTTP/1.1 200 OK\r\n"
                       << "Content-Type: image/png\r\n"
                       << "Content-Length: " << buffer.length() << "\r\n"
@@ -318,6 +329,7 @@ int main(int argc, char *argv[])
     }
 
     mapnik::datasource_cache::instance().register_datasources("/usr/lib/mapnik/3.0/input");
+    mapnik::datasource_cache::instance().register_datasources("/usr/local/lib/mapnik/input/");
 
     Server server(mapnik_file, port, threads);
 
