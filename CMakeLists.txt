@@ -16,8 +16,17 @@ endif()
 find_library(PTHREAD_LIBRARY pthread)
 
 # Mapnik stuff
+
+execute_process(COMMAND mapnik-config --input-plugins OUTPUT_VARIABLE MAPNIK_PLUGIN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND mapnik-config --defines OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+add_definitions(${MAPNIK_DEFINES})
+add_definitions(-DMAPNIK_PLUGIN_PATH="${MAPNIK_PLUGIN_PATH}")
+
 find_path(MAPNIK_INCLUDE_DIR mapnik/map.hpp )
 find_library(MAPNIK_LIBRARY mapnik)
+find_library(MAPNIK_JSON_LIBRARY libmapnik-json.a)
+find_library(MAPNIK_WKT_LIBRARY libmapnik-wkt.a)
 include( FindPackageHandleStandardArgs )
 FIND_PACKAGE_HANDLE_STANDARD_ARGS( Mapnik DEFAULT_MSG MAPNIK_LIBRARY MAPNIK_INCLUDE_DIR )
 mark_as_advanced( MAPNIK_INCLUDE_DIR MAPNIK_LIBRARY )
@@ -30,8 +39,8 @@ include_directories("${PROJECT_SOURCE_DIR}/deps/rapidjson-master/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/variant/include")
 include_directories(${MAPNIK_INCLUDE_DIR})
 
-add_executable(tileserver src/server.cpp)
-target_link_libraries(tileserver ${ICU_LIBRARY} ${Boost_LIBRARIES} ${MAPNIK_LIBRARY} ${PTHREAD_LIBRARY})
+add_executable(tileserver src/server.cpp src/grid_utils.cpp)
+target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY})
 
-set_property(TARGET tileserver PROPERTY CXX_STANDARD 11)
+set_property(TARGET tileserver PROPERTY CXX_STANDARD 14)
 set_property(TARGET tileserver PROPERTY CXX_STANDARD_REQUIRED ON)

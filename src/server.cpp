@@ -28,6 +28,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
+#include "grid_utils.hpp"
+
 // Added for the json-example:
 
 typedef SimpleWeb::Server<SimpleWeb::HTTP> HttpServer;
@@ -328,8 +330,7 @@ int main(int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 
-    mapnik::datasource_cache::instance().register_datasources("/usr/lib/mapnik/3.0/input");
-    mapnik::datasource_cache::instance().register_datasources("/usr/local/lib/mapnik/input/");
+    mapnik::datasource_cache::instance().register_datasources(MAPNIK_PLUGIN_PATH);
 
     Server server(mapnik_file, port, threads);
 
