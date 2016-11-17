@@ -20,6 +20,19 @@ Put it behind a reverse proxy and run multiple instances in order to serve multi
 
 Tiles become available at `http://localhost:8080/z/x/y.png`
 
+# Options
+
+There are a few basic things you can tune:
+
+| option | Description |
+|--------|--|
+| --help | show help |
+| --port NUM | listen on TCP port NUM instead of the default 8080 |
+| --prefix ARG | Answer requests at /prefix/z/x/y.png instead of /z/x/y.png |
+| --threads NUM | Run NUM worker threads.  Defaults to 1, adjust for performance |
+| --cache-size NUM | How many tiles to cache in RAM - default is 1000 |
+| --mapnik-file FILENAME | Long-form way to specify the filename |
+
 # Reloading
 
 You can send `SIGHUP` to the process and it will re-load the config files and re-initialize
