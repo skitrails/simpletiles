@@ -133,28 +133,14 @@ class TileCache
     lru11::Cache<TileCoordinate, std::string, std::mutex> cache;
 
   public:
-    TileCache() : cache(1000, 100){};
-
-    TileCache(const std::vector<std::shared_ptr<mapnik::Map>> &maps_) : cache(1000, 100)
+    TileCache(const std::vector<std::shared_ptr<mapnik::Map>> &maps_, const int cache_size = 1000)
+        : cache(cache_size, 100)
     {
         for (auto &map : maps_)
         {
             map_pool.push(map);
         }
         mapcount = maps_.size();
-    }
-
-    TileCache(TileCache &&other) : cache(1000, 100)
-    {
-        mapcount = other.mapcount;
-        map_pool = std::move(other.map_pool);
-    }
-
-    TileCache &operator=(TileCache &&other)
-    {
-        mapcount = other.mapcount;
-        map_pool = std::move(other.map_pool);
-        return *this;
     }
 
     mapnik::box2d<double> getTileBox(const TileCoordinate &coord)
@@ -285,6 +271,7 @@ struct Server
 
     const std::string &mapnik_file;
     const int threads;
+    const int cache_size;
     const std::string &prefix;
     std::shared_ptr<TileCache> cache;
     struct stat last_file_stat;
@@ -294,9 +281,11 @@ struct Server
     Server(const std::string &mapnik_file_,
            const std::string &prefix_,
            const int port = 8080,
-           const int threads_ = 1)
-        : server(port, threads_), mapnik_file(mapnik_file_), prefix(prefix_), threads(threads_),
-          cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads)))
+           const int threads_ = 1,
+           const int cache_size_ = 1000)
+        : server(port, threads_), mapnik_file(mapnik_file_), threads(threads_),
+          cache_size(cache_size_), prefix(prefix_),
+          cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size))
     {
         // Save file info so we can check for reloads
         ::stat(mapnik_file_.c_str(), &last_file_stat);
@@ -399,7 +388,8 @@ struct Server
                 // any writes are complete
                 try
                 {
-                    auto tmp = std::make_shared<TileCache>(makeMaps(mapnik_file, threads));
+                    auto tmp =
+                        std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size);
                     boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
                     cache = tmp;
                     std::clog << "success." << std::endl;
@@ -425,6 +415,7 @@ int main(int argc, char *argv[])
 
     int port = 8080;
     int threads = 1;
+    int cache_size = 1000;
     std::string prefix = "";
     std::string mapnik_file = "";
 
@@ -438,6 +429,9 @@ int main(int argc, char *argv[])
         po::value<std::string>(&prefix)->default_value(""),
         "URL prefix to match [/prefix]/z/x/y.png")(
         "threads", po::value<int>(&threads)->default_value(1), "Number of threads")(
+        "cache-size",
+        po::value<int>(&cache_size)->default_value(1000),
+        "Maximum number of tiles to cache")(
         "mapnik-file", po::value<std::string>(&mapnik_file), "Mapnik XML file to load");
 
     po::positional_options_description p;
@@ -474,7 +468,7 @@ int main(int argc, char *argv[])
 
     mapnik::datasource_cache::instance().register_datasources(MAPNIK_PLUGIN_PATH);
 
-    Server server(mapnik_file, prefix, port, threads);
+    Server server(mapnik_file, prefix, port, threads, cache_size);
 
     std::thread server_thread([&server]() { server.start(); });
 
