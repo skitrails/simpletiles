@@ -378,13 +378,13 @@ struct Server
     {
         while (true)
         {
-
+            std::this_thread::sleep_for(std::chrono::milliseconds(1100));
             struct stat fileinfo;
             ::stat(mapnik_file.c_str(), &fileinfo);
             if (fileinfo.st_mtime > last_file_stat.st_mtime)
             {
-                std::clog << mapnik_file << " file change detected, waiting until changes stop "
-                          << std::endl;
+                // After noticing a change, keep looking until the file stops
+                // changing - *then* do a reload
                 std::this_thread::sleep_for(std::chrono::milliseconds(1100));
                 struct stat fileinfo2;
                 ::stat(mapnik_file.c_str(), &fileinfo2);
@@ -394,16 +394,24 @@ struct Server
                     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
                     ::stat(mapnik_file.c_str(), &fileinfo2);
                 }
-                std::clog << mapnik_file << " file stopped changing for 1.1s, performing reload "
-                          << std::endl;
+                std::clog << mapnik_file << " changed, reloading..." << std::flush;
                 // Short pause after noticing file mtime change to ensure that
                 // any writes are complete
-                boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
-                cache = std::make_shared<TileCache>(makeMaps(mapnik_file, threads));
+                try
+                {
+                    auto tmp = std::make_shared<TileCache>(makeMaps(mapnik_file, threads));
+                    boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
+                    cache = tmp;
+                    std::clog << "success." << std::endl;
+                }
+                catch (const std::exception &e)
+                {
+                    std::clog << "ERROR: " << e.what() << std::endl;
+                }
+                // Even if we fail, we'll update the last filestamp thingy so
+                // that we won't keep re-trying a broken file until it updates
                 last_file_stat = fileinfo;
             }
-            // Sleep for 1 second between file checks
-            std::this_thread::sleep_for(std::chrono::milliseconds(1100));
         }
     }
 
@@ -469,8 +477,6 @@ int main(int argc, char *argv[])
     std::thread server_thread([&server]() { server.start(); });
 
     // Give the main server a chance to start before starting the reload thread
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
     std::thread reload_thread([&server]() { server.reload_wait(); });
 
     std::clog << "Server started, waiting for requests on port " << server.port() << " at  "
