@@ -37,6 +37,7 @@ include_directories(${ICU_INCLUDE_DIRS})
 include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/rapidjson-master/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/variant/include")
+include_directories("${PROJECT_SOURCE_DIR}/deps/Simple-Web-Server")
 include_directories(${MAPNIK_INCLUDE_DIR})
 
 add_executable(tileserver src/server.cpp src/grid_utils.cpp)
