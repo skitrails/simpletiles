@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <exception>
 #include <condition_variable>
+#include <sstream>
+#include <string>
 
 #include <mapnik/box2d.hpp>
 #include <mapnik/map.hpp>
@@ -16,6 +18,8 @@
 #include <mapnik/image.hpp>
 #include <mapnik/image_util.hpp>
 #include <mapnik/datasource_cache.hpp>
+#include <mapnik/unicode.hpp>
+#include <mapnik/layer.hpp>
 
 #include <cmath>
 #include <mutex>
@@ -24,6 +28,8 @@
 #include "LRUCache11.hpp"
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
 
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
@@ -160,6 +166,70 @@ class TileCache
         return {minx, miny, maxx, maxy};
     }
 
+    int getInteractiveLayerID(const mapnik::Map &map) const
+    {
+        int result = 0;
+
+        const auto ilayer = map.get_extra_parameters().get<std::string>("interactivity_layer");
+
+        if (ilayer)
+        {
+            int idx = 0;
+            const auto &layers = map.layers();
+            for (const auto &layer : layers)
+            {
+                if (*ilayer == layer.name())
+                {
+                    result = idx;
+                    break;
+                }
+                idx++;
+            }
+        }
+
+        return result;
+    }
+
+    std::vector<std::string> getInteractiveFields(const mapnik::Map &map) const
+    {
+        std::vector<std::string> results;
+        const auto fields = map.get_extra_parameters().get<std::string>("interactivity_fields");
+        if (fields)
+        {
+            std::istringstream ss(*fields);
+            std::string item;
+            while (std::getline(ss, item, ','))
+            {
+                results.push_back(item);
+            }
+        }
+        return results;
+    }
+
+    std::string getGrid(const TileCoordinate &tile)
+    {
+        const auto bbox = getTileBox(tile);
+        {
+            // Grab a map from the pool
+            auto map = map_pool.pop();
+            const auto interactivity_layer_id = getInteractiveLayerID(*map);
+            map->resize(256 * tile.scale, 256 * tile.scale);
+            map->zoom_to_box(bbox);
+            std::vector<std::string> fields = getInteractiveFields(*map);
+            mapnik::grid grid(256, 256, fields.front());
+            mapnik::render_layer_for_grid(*map, grid, interactivity_layer_id, fields, 1, 0, 0);
+            map_pool.push(std::move(map));
+
+            auto document = mapnik::grid_encode(grid, "utf", false, 4);
+
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            document.Accept(writer);
+
+            return std::string(buffer.GetString());
+        }
+    }
+
     std::string getTile(const TileCoordinate &tile)
     {
         try
@@ -244,7 +314,8 @@ struct Server
             if (!out_of_bounds)
             {
                 int limit = (1 << z);
-                // out_of_bounds =  (x < 0 || x > (limit * 1 - 1) || y < 0 || y > (limit * 1 - 1));
+                // out_of_bounds =  (x < 0 || x > (limit * 1 - 1) || y < 0 || y > (limit *
+                // 1 - 1));
                 out_of_bounds = (x > (limit * 1 - 1) || y > (limit * 1 - 1));
             }
 
@@ -258,12 +329,24 @@ struct Server
             }
 
             // We found a handler, let's use it
-            std::string buffer = cache->getTile({x, y, z, scale});
-            *response << "HTTP/1.1 200 OK\r\n"
-                      << "Content-Type: image/png\r\n"
-                      << "Content-Length: " << buffer.length() << "\r\n"
-                      << "\r\n"
-                      << buffer;
+            if ("png" == format)
+            {
+                std::string buffer = cache->getTile({x, y, z, scale});
+                *response << "HTTP/1.1 200 OK\r\n"
+                          << "Content-Type: image/png\r\n"
+                          << "Content-Length: " << buffer.length() << "\r\n"
+                          << "\r\n"
+                          << buffer;
+            }
+            else
+            {
+                std::string buffer = cache->getGrid({x, y, z, scale});
+                *response << "HTTP/1.1 200 OK\r\n"
+                          << "Content-Type: text/json\r\n"
+                          << "Content-Length: " << buffer.length() << "\r\n"
+                          << "\r\n"
+                          << buffer;
+            }
         };
 
         server.default_resource["GET"] = [](std::shared_ptr<HttpServer::Response> response,

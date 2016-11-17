@@ -38,6 +38,8 @@
 #include <mapnik/feature_kv_iterator.hpp>
 #include "grid_utils.hpp"
 #include "rapidjson/document.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
 #include <mapnik/value_types.hpp>
 
 // stl
@@ -275,6 +277,9 @@ void grid_encode_utf(T const &grid_type,
     if (resolution != 1)
     {
         mapnik::grid2utf<T>(grid_type, l, key_order, resolution, json.GetAllocator());
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        l.Accept(writer);
     }
     else
     {
@@ -299,9 +304,9 @@ void grid_encode_utf(T const &grid_type,
         mapnik::write_features<T>(grid_type, feature_data, key_order, json.GetAllocator());
     }
 
-    json["grid"] = l;
-    json["keys"] = keys_a;
-    json["data"] = feature_data;
+    json.AddMember("grid", l, json.GetAllocator());
+    json.AddMember("keys", keys_a, json.GetAllocator());
+    json.AddMember("data", feature_data, json.GetAllocator());
 }
 
 template <typename T>
@@ -311,6 +316,7 @@ grid_encode(T const &grid, std::string const &format, bool add_features, unsigne
     if (format == "utf")
     {
         rapidjson::Document document;
+        document.SetObject();
         grid_encode_utf<T>(grid, document, add_features, resolution);
         return document;
     }
