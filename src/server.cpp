@@ -285,19 +285,24 @@ struct Server
 
     const std::string &mapnik_file;
     const int threads;
+    const std::string &prefix;
     std::shared_ptr<TileCache> cache;
     struct stat last_file_stat;
     boost::shared_mutex reload_mutex;
 
   public:
-    Server(const std::string &mapnik_file_, const int port = 8080, const int threads_ = 1)
-        : server(port, threads_), mapnik_file(mapnik_file_), threads(threads_),
+    Server(const std::string &mapnik_file_,
+           const std::string &prefix_,
+           const int port = 8080,
+           const int threads_ = 1)
+        : server(port, threads_), mapnik_file(mapnik_file_), prefix(prefix_), threads(threads_),
           cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads)))
     {
         // Save file info so we can check for reloads
         ::stat(mapnik_file_.c_str(), &last_file_stat);
 
-        server.resource["^/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json)$"]
+        server.resource["^" + (prefix.empty() ? "" : ("/" + prefix)) +
+                        "/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json)$"]
                        ["GET"] = [this](std::shared_ptr<HttpServer::Response> response,
                                         std::shared_ptr<HttpServer::Request> request) {
 
@@ -410,6 +415,7 @@ int main(int argc, char *argv[])
 
     int port = 8080;
     int threads = 1;
+    std::string prefix = "";
     std::string mapnik_file = "";
 
     namespace po = boost::program_options;
@@ -418,6 +424,9 @@ int main(int argc, char *argv[])
 
     desc.add_options()("help", "produce help message")(
         "port", po::value<int>(&port)->default_value(8080), "TCP port to listen on")(
+        "prefix",
+        po::value<std::string>(&prefix)->default_value(""),
+        "URL prefix to match [/prefix]/z/x/y.png")(
         "threads", po::value<int>(&threads)->default_value(1), "Number of threads")(
         "mapnik-file", po::value<std::string>(&mapnik_file), "Mapnik XML file to load");
 
@@ -455,7 +464,7 @@ int main(int argc, char *argv[])
 
     mapnik::datasource_cache::instance().register_datasources(MAPNIK_PLUGIN_PATH);
 
-    Server server(mapnik_file, port, threads);
+    Server server(mapnik_file, prefix, port, threads);
 
     std::thread server_thread([&server]() { server.start(); });
 
@@ -464,8 +473,9 @@ int main(int argc, char *argv[])
 
     std::thread reload_thread([&server]() { server.reload_wait(); });
 
-    std::clog << "Server started, waiting for requests on port " << server.port()
-              << ".  Send SIGHUP to reload config." << std::endl;
+    std::clog << "Server started, waiting for requests on port " << server.port() << " at  "
+              << (prefix.empty() ? "" : ("/" + prefix)) + "/{z}/{x}/{y}.(png|grid.json)"
+              << std::endl;
 
     server_thread.join();
 
