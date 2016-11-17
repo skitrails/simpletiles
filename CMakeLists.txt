@@ -4,7 +4,7 @@ project (tileserver)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 set(Boost_USE_STATIC_LIBS        ON)
-find_package(Boost 1.56 REQUIRED COMPONENTS filesystem system chrono regex program_options)
+find_package(Boost 1.56 REQUIRED COMPONENTS filesystem system chrono regex program_options thread)
 
 if(APPLE)
   find_library(ICU_LIBRARY icuuc /usr/local/opt/icu4c/lib)

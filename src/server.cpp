@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <sstream>
 #include <string>
+#include <shared_mutex>
 
 #include <mapnik/box2d.hpp>
 #include <mapnik/map.hpp>
@@ -33,8 +34,14 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
+#include <boost/thread/locks.hpp>
+#include <boost/thread/shared_mutex.hpp>
 
 #include "grid_utils.hpp"
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // Added for the json-example:
 
@@ -259,15 +266,6 @@ class TileCache
     }
 };
 
-namespace
-{
-std::condition_variable reload_condition;
-}
-
-// This function is declared `extern "C"` because the OS signal handler
-// registration expects C-style linkage.
-extern "C" void hup_handler(int signal) { reload_condition.notify_one(); }
-
 struct Server
 {
     HttpServer server;
@@ -288,14 +286,18 @@ struct Server
     const std::string &mapnik_file;
     const int threads;
     std::shared_ptr<TileCache> cache;
+    struct stat last_file_stat;
+    boost::shared_mutex reload_mutex;
 
   public:
     Server(const std::string &mapnik_file_, const int port = 8080, const int threads_ = 1)
         : server(port, threads_), mapnik_file(mapnik_file_), threads(threads_),
           cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads)))
     {
+        // Save file info so we can check for reloads
+        ::stat(mapnik_file_.c_str(), &last_file_stat);
 
-        server.resource["^/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid)$"]
+        server.resource["^/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json)$"]
                        ["GET"] = [this](std::shared_ptr<HttpServer::Response> response,
                                         std::shared_ptr<HttpServer::Request> request) {
 
@@ -329,9 +331,13 @@ struct Server
             }
 
             // We found a handler, let's use it
+            std::string buffer;
             if ("png" == format)
             {
-                std::string buffer = cache->getTile({x, y, z, scale});
+                {
+                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
+                    buffer = cache->getTile({x, y, z, scale});
+                }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: image/png\r\n"
                           << "Content-Length: " << buffer.length() << "\r\n"
@@ -340,7 +346,10 @@ struct Server
             }
             else
             {
-                std::string buffer = cache->getGrid({x, y, z, scale});
+                {
+                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
+                    buffer = cache->getGrid({x, y, z, scale});
+                }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: text/json\r\n"
                           << "Content-Length: " << buffer.length() << "\r\n"
@@ -364,11 +373,32 @@ struct Server
     {
         while (true)
         {
-            std::mutex reload_mutex;
-            std::unique_lock<std::mutex> lck(reload_mutex);
-            reload_condition.wait(lck);
-            std::clog << "SIGHUP received, reloading cache" << std::endl;
-            cache = std::make_shared<TileCache>(makeMaps(mapnik_file, threads));
+
+            struct stat fileinfo;
+            ::stat(mapnik_file.c_str(), &fileinfo);
+            if (fileinfo.st_mtime > last_file_stat.st_mtime)
+            {
+                std::clog << mapnik_file << " file change detected, waiting until changes stop "
+                          << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+                struct stat fileinfo2;
+                ::stat(mapnik_file.c_str(), &fileinfo2);
+                while (fileinfo2.st_mtime > fileinfo.st_mtime)
+                {
+                    fileinfo = fileinfo2;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+                    ::stat(mapnik_file.c_str(), &fileinfo2);
+                }
+                std::clog << mapnik_file << " file stopped changing for 1.1s, performing reload "
+                          << std::endl;
+                // Short pause after noticing file mtime change to ensure that
+                // any writes are complete
+                boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
+                cache = std::make_shared<TileCache>(makeMaps(mapnik_file, threads));
+                last_file_stat = fileinfo;
+            }
+            // Sleep for 1 second between file checks
+            std::this_thread::sleep_for(std::chrono::milliseconds(1100));
         }
     }
 
@@ -419,9 +449,11 @@ int main(int argc, char *argv[])
 
     std::thread server_thread([&server]() { server.start(); });
 
+    // Give the main server a chance to start before starting the reload thread
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
     std::thread reload_thread([&server]() { server.reload_wait(); });
 
-    std::signal(SIGHUP, hup_handler);
     std::clog << "Server started, waiting for requests on port " << server.port()
               << ".  Send SIGHUP to reload config." << std::endl;
 
