@@ -422,23 +422,33 @@ int main(int argc, char *argv[])
         "mapnik-file", po::value<std::string>(&mapnik_file), "Mapnik XML file to load");
 
     po::positional_options_description p;
-    p.add("mapnik_file", 1);
+    p.add("mapnik-file", 1);
 
     po::variables_map vm;
-    po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+    try
+    {
+        po::store(po::command_line_parser(argc, argv).options(desc).positional(p).run(), vm);
+    }
+    catch (boost::program_options::error &e)
+    {
+        std::cout << "ERROR: " << e.what() << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] [--mapnik-file] filename.xml" << std::endl;
+        std::cout << desc << std::endl;
+        return EXIT_FAILURE;
+    }
     po::notify(vm);
 
     if (!vm.count("mapnik-file"))
     {
         std::cout << "ERROR: no mapnik file supplied" << std::endl;
-        std::cout << "Usage: " << argv[0] << "[options] [--mapnik-file] filename.xml" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] [--mapnik-file] filename.xml" << std::endl;
         std::cout << desc << std::endl;
         return EXIT_FAILURE;
     }
 
     if (vm.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << "[options] [--mapnik-file] filename.xml" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options] [--mapnik-file] filename.xml" << std::endl;
         std::cout << desc << std::endl;
         return EXIT_SUCCESS;
     }
