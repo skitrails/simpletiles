@@ -410,6 +410,8 @@ struct Server
                 }
                 // Even if we fail, we'll update the last filestamp thingy so
                 // that we won't keep re-trying a broken file until it updates
+                // It's safe to not lock-on-modify here, we're the only writer
+                // and there is just one writer thread.
                 last_file_stat = fileinfo;
             }
         }
