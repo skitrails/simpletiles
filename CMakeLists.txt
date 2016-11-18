@@ -17,8 +17,13 @@ find_library(PTHREAD_LIBRARY pthread)
 
 # Mapnik stuff
 
-execute_process(COMMAND mapnik-config --input-plugins OUTPUT_VARIABLE MAPNIK_PLUGIN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND mapnik-config --defines OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
+find_program(MAPNIK_CONFIG NAMES mapnik-config HINTS /usr/local/bin /usr/local/mapnik/bin /opt/local/bin)
+if (NOT MAPNIK_CONFIG)
+    message(FATAL_ERROR "mapnik-config not found, cannot continue.  Make sure it's in your path.")
+endif()
+execute_process(COMMAND ${MAPNIK_CONFIG} --input-plugins OUTPUT_VARIABLE MAPNIK_PLUGIN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${MAPNIK_CONFIG} --defines OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
+#execute_process(COMMAND ${MAPNIK_CONFIG} --libs OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 add_definitions(${MAPNIK_DEFINES})
 add_definitions(-DMAPNIK_PLUGIN_PATH="${MAPNIK_PLUGIN_PATH}")
@@ -32,7 +37,6 @@ FIND_PACKAGE_HANDLE_STANDARD_ARGS( Mapnik DEFAULT_MSG MAPNIK_LIBRARY MAPNIK_INCL
 mark_as_advanced( MAPNIK_INCLUDE_DIR MAPNIK_LIBRARY )
 
 include_directories(${Boost_INCLUDE_DIRS})
-
 include_directories(${ICU_INCLUDE_DIRS})
 include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/rapidjson-master/include")
