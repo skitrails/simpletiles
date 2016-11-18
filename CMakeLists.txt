@@ -3,7 +3,7 @@ project (tileserver)
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
-set(Boost_USE_STATIC_LIBS        ON)
+#set(Boost_USE_STATIC_LIBS        ON)
 find_package(Boost 1.56 REQUIRED COMPONENTS filesystem system chrono regex program_options thread)
 
 if(APPLE)
@@ -41,7 +41,7 @@ include_directories("${PROJECT_SOURCE_DIR}/deps/Simple-Web-Server")
 include_directories(${MAPNIK_INCLUDE_DIR})
 
 add_executable(tileserver src/server.cpp src/grid_utils.cpp)
-target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY})
+target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} icui18n icuuc icudata icule icuio iculx icutest icutu ${Boost_LIBRARIES} ${PTHREAD_LIBRARY})
 
 set_property(TARGET tileserver PROPERTY CXX_STANDARD 14)
 set_property(TARGET tileserver PROPERTY CXX_STANDARD_REQUIRED ON)

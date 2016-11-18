@@ -318,8 +318,13 @@ struct Server
             if (out_of_bounds)
             {
                 std::string content = "Invalid tile coordinates";
-                *response << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << content.length()
-                          << "\r\n\r\n"
+                *response << "HTTP/1.1 400 Bad Request\r\n"
+                          << "Content-Length: " << content.length() << "\r\n"
+                          << "Access-Control-Allow-Origin: *\r\n"
+                          << "Access-Control-Allow-Credentials: true\r\n"
+                          << "Access-Control-Allow-Methods: GET\r\n"
+                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
+                          << "\r\n"
                           << content;
                 return;
             }
@@ -335,6 +340,10 @@ struct Server
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: image/png\r\n"
                           << "Content-Length: " << buffer.length() << "\r\n"
+                          << "Access-Control-Allow-Origin: *\r\n"
+                          << "Access-Control-Allow-Credentials: true\r\n"
+                          << "Access-Control-Allow-Methods: GET\r\n"
+                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
                           << "\r\n"
                           << buffer;
             }
@@ -347,6 +356,10 @@ struct Server
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: text/json\r\n"
                           << "Content-Length: " << buffer.length() << "\r\n"
+                          << "Access-Control-Allow-Origin: *\r\n"
+                          << "Access-Control-Allow-Credentials: true\r\n"
+                          << "Access-Control-Allow-Methods: GET\r\n"
+                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
                           << "\r\n"
                           << buffer;
             }
