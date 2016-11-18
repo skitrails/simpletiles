@@ -457,6 +457,7 @@ struct Server
             {
                 std::clog << mapnik_file << " changed, reloading...";
                 change_detected = true;
+                mapnik_file_timestamp = fileinfo;
             }
             else
             {
@@ -466,9 +467,9 @@ struct Server
                     ::stat(finfo.first.c_str(), &tmpinfo);
                     if (tmpinfo.st_mtime > finfo.second.st_mtime)
                     {
-                        std::clog << finfo.first << " changed, reloading...";
+                        std::clog << finfo.first << " changed, reloading... ";
                         change_detected = true;
-                        break;
+                        dependent_timestamps[finfo.first] = tmpinfo;
                     }
                 }
             }
@@ -486,6 +487,30 @@ struct Server
                 // This is simple pause to give any file writers a chance to complete.
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 std::clog << std::flush;
+                bool something_changed = false;
+                do
+                {
+                    something_changed = false;
+                    // Check to see if any of our files have changed
+                    if (fileinfo.st_mtime > mapnik_file_timestamp.st_mtime)
+                    {
+                        something_changed = true;
+                        mapnik_file_timestamp = fileinfo;
+                    }
+                    else
+                    {
+                        for (const auto &finfo : dependent_timestamps)
+                        {
+                            struct stat tmpinfo;
+                            ::stat(finfo.first.c_str(), &tmpinfo);
+                            if (tmpinfo.st_mtime > finfo.second.st_mtime)
+                            {
+                                something_changed = true;
+                                dependent_timestamps[finfo.first] = tmpinfo;
+                            }
+                        }
+                    }
+                } while (something_changed);
 
                 // Now, re-initialize mapnik
                 try
@@ -510,11 +535,6 @@ struct Server
                     ::stat(fname.c_str(), &tmpinfo);
                     dependent_timestamps[fname] = tmpinfo;
                 }
-                // Even if we fail, we'll update the last filestamp thingy so
-                // that we won't keep re-trying a broken file until it updates
-                // It's safe to not lock-on-modify here, we're the only writer
-                // and there is just one writer thread.
-                mapnik_file_timestamp = fileinfo;
             }
         }
     }
