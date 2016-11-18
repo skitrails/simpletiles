@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
 	<title>Leaflet Quick Start Guide Example</title>
 	<meta charset="utf-8" />
@@ -8,10 +9,12 @@
 
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.0-rc.3/dist/leaflet.css" />
 </head>
+
 <body>
 	<div id="mapid" style="width: 600px; height: 400px"></div>
 
 	<script src="https://unpkg.com/leaflet@1.0.0-rc.3/dist/leaflet.js"></script>
+	<script src="leaflet.utfgrid.js"></script>
 	<script>
 
 		var mymap = L.map('mapid').setView([48.476435, -120.191116], 13);
@@ -24,18 +27,31 @@
 			id: 'mapbox.streets'
 		}).addTo(mymap);
 
+        var utfGrid = new L.UtfGrid('http://localhost:8080/{z}/{x}/{y}.grid.json', {
+            resolution: 4,
+            useJsonP: false
+        });
+
+        utfGrid.on('click', function (e) {
+            //click events are fired with e.data==null if an area with no hit is clicked
+            if (e) {
+				console.log(e);
+            } else {
+                alert('click: nothing');
+            }
+        });
+        utfGrid.on('mouseover', function (e) { console.log('hover: ' + e); });
+        utfGrid.on('mousemove', function (e) { console.log('move: ' + e); });
+        utfGrid.on('mouseout', function (e) { console.log('unhover: ' + e); });
+
 		L.tileLayer('http://localhost:8080/{z}/{x}/{y}.png', {
 			maxZoom: 18,
 			attribution: 'SkiTrails LLC '
 		}).addTo(mymap);
 
-/*
-		L.tileLayer('http://localhost:8080/amenities/{z}/{x}/{y}.png', {
-			maxZoom: 18,
-			attribution: 'SkiTrails LLC '
-		}).addTo(mymap);
-        */
+        utfGrid.addTo(mymap);
 
 	</script>
 </body>
+
 </html>

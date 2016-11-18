@@ -32,6 +32,8 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
 
+#include "rapidxml.hpp"
+
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <boost/thread/locks.hpp>
@@ -275,8 +277,57 @@ struct Server
     const int cache_size;
     const std::string &prefix;
     std::shared_ptr<TileCache> cache;
-    struct stat last_file_stat;
+
+    // Data needed for auto reloads
     boost::shared_mutex reload_mutex;
+    struct stat mapnik_file_timestamp;
+    std::unordered_map<std::string, struct stat> dependent_timestamps;
+
+    std::vector<std::string> dependentFilenames(const std::string &mapnik_xml_file)
+    {
+        std::vector<std::string> result;
+        std::ifstream t(mapnik_xml_file);
+        if (!t)
+            return result;
+        std::vector<char> buffer((std::istreambuf_iterator<char>(t)),
+                                 std::istreambuf_iterator<char>());
+        buffer.push_back('\0');
+
+        rapidxml::xml_document<> doc;
+        doc.parse<0>(buffer.data());
+        auto mapnode = doc.first_node("Map");
+        if (mapnode)
+        {
+            auto layernode = mapnode->first_node("Layer");
+            while (layernode)
+            {
+                auto datasourcenode = layernode->first_node("Datasource");
+                if (datasourcenode)
+                {
+                    auto parameter = datasourcenode->first_node("Parameter");
+                    while (parameter)
+                    {
+                        auto name = parameter->first_attribute("name");
+                        if (name && std::strcmp(name->value(), "file") == 0)
+                        {
+                            boost::filesystem::path base(mapnik_xml_file);
+                            result.push_back((base.parent_path() /=
+                                              std::string(parameter->first_node()->value()))
+                                                 .string());
+                            break;
+                        }
+                        parameter = parameter->next_sibling("Parameter");
+                    }
+                }
+                layernode = layernode->next_sibling("Layer");
+            }
+        }
+        std::sort(result.begin(), result.end());
+        auto last = std::unique(result.begin(), result.end());
+        result.erase(last, result.end());
+
+        return result;
+    }
 
   public:
     Server(const std::string &mapnik_file_,
@@ -288,8 +339,17 @@ struct Server
           cache_size(cache_size_), prefix(prefix_),
           cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size))
     {
+
+        // file_modify_times = getFileTimes(mapnik_file);
         // Save file info so we can check for reloads
-        ::stat(mapnik_file_.c_str(), &last_file_stat);
+        ::stat(mapnik_file.c_str(), &mapnik_file_timestamp);
+        auto dependents = dependentFilenames(mapnik_file);
+        for (const auto &fname : dependents)
+        {
+            struct stat tmp_stat;
+            ::stat(fname.c_str(), &tmp_stat);
+            dependent_timestamps[fname] = tmp_stat;
+        }
 
         server.resource["^" + (prefix.empty() ? "" : ("/" + prefix)) +
                         "/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json)$"]
@@ -387,25 +447,47 @@ struct Server
     {
         while (true)
         {
+            bool change_detected = false;
             std::this_thread::sleep_for(std::chrono::milliseconds(1100));
             struct stat fileinfo;
             ::stat(mapnik_file.c_str(), &fileinfo);
-            if (fileinfo.st_mtime > last_file_stat.st_mtime)
+
+            // Check to see if any of our files have changed
+            if (fileinfo.st_mtime > mapnik_file_timestamp.st_mtime)
+            {
+                std::clog << mapnik_file << " changed, reloading...";
+                change_detected = true;
+            }
+            else
+            {
+                for (const auto &finfo : dependent_timestamps)
+                {
+                    struct stat tmpinfo;
+                    ::stat(finfo.first.c_str(), &tmpinfo);
+                    if (tmpinfo.st_mtime > finfo.second.st_mtime)
+                    {
+                        std::clog << finfo.first << " changed, reloading...";
+                        change_detected = true;
+                        break;
+                    }
+                }
+            }
+
+            // If they have, the process is basically:
+            //   - wait until the mapnik file stops changing
+            //   - parse it, get the list of dependent files
+            //   - update their timestamps
+            //   - wait until they stop changing
+            //   - reload the mapnik objects
+            if (change_detected)
             {
                 // After noticing a change, keep looking until the file stops
                 // changing - *then* do a reload
-                std::this_thread::sleep_for(std::chrono::milliseconds(1100));
-                struct stat fileinfo2;
-                ::stat(mapnik_file.c_str(), &fileinfo2);
-                while (fileinfo2.st_mtime > fileinfo.st_mtime)
-                {
-                    fileinfo = fileinfo2;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
-                    ::stat(mapnik_file.c_str(), &fileinfo2);
-                }
-                std::clog << mapnik_file << " changed, reloading..." << std::flush;
-                // Short pause after noticing file mtime change to ensure that
-                // any writes are complete
+                // This is simple pause to give any file writers a chance to complete.
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::clog << std::flush;
+
+                // Now, re-initialize mapnik
                 try
                 {
                     auto tmp =
@@ -418,11 +500,21 @@ struct Server
                 {
                     std::clog << "ERROR: " << e.what() << std::endl;
                 }
+
+                // Get a fresh list of dependents from the mapnik file, in case
+                // it changed.
+                dependent_timestamps.clear();
+                for (const auto &fname : dependentFilenames(mapnik_file))
+                {
+                    struct stat tmpinfo;
+                    ::stat(fname.c_str(), &tmpinfo);
+                    dependent_timestamps[fname] = tmpinfo;
+                }
                 // Even if we fail, we'll update the last filestamp thingy so
                 // that we won't keep re-trying a broken file until it updates
                 // It's safe to not lock-on-modify here, we're the only writer
                 // and there is just one writer thread.
-                last_file_stat = fileinfo;
+                mapnik_file_timestamp = fileinfo;
             }
         }
     }

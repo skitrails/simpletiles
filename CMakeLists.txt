@@ -38,10 +38,11 @@ include_directories("${PROJECT_SOURCE_DIR}/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/rapidjson-master/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/variant/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/Simple-Web-Server")
+include_directories("${PROJECT_SOURCE_DIR}/deps/rapidxml-1.13")
 include_directories(${MAPNIK_INCLUDE_DIR})
 
 add_executable(tileserver src/server.cpp src/grid_utils.cpp)
-target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} icui18n icuuc icudata icule icuio iculx icutest icutu ${Boost_LIBRARIES} ${PTHREAD_LIBRARY})
+target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY})
 
 set_property(TARGET tileserver PROPERTY CXX_STANDARD 14)
 set_property(TARGET tileserver PROPERTY CXX_STANDARD_REQUIRED ON)
