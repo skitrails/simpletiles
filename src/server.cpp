@@ -205,15 +205,16 @@ class TileCache
         {
             // Grab a map from the pool
             auto map = map_pool.pop();
-            const auto interactivity_layer_id = getInteractiveLayerID(*map);
             map->resize(256 * tile.scale, 256 * tile.scale);
             map->zoom_to_box(bbox);
+            const auto interactivity_layer_id = getInteractiveLayerID(*map);
             std::vector<std::string> fields = getInteractiveFields(*map);
             mapnik::grid grid(256, 256, fields.front());
-            mapnik::render_layer_for_grid(*map, grid, interactivity_layer_id, fields, 1, 0, 0);
+            mapnik::render_layer_for_grid(
+                *map, grid, interactivity_layer_id, fields, tile.scale, 0, 0);
             map_pool.push(std::move(map));
 
-            auto document = mapnik::grid_encode(grid, "utf", false, 4);
+            auto document = mapnik::grid_encode(grid, "utf", true, 4);
 
             rapidjson::StringBuffer buffer;
             rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -323,7 +324,9 @@ struct Server
                           << "Access-Control-Allow-Origin: *\r\n"
                           << "Access-Control-Allow-Credentials: true\r\n"
                           << "Access-Control-Allow-Methods: GET\r\n"
-                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
+                          << "Access-Control-Allow-Headers: "
+                             "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-"
+                             "Modified-Since,Cache-Control,Content-Type\r\n"
                           << "\r\n"
                           << content;
                 return;
@@ -343,7 +346,9 @@ struct Server
                           << "Access-Control-Allow-Origin: *\r\n"
                           << "Access-Control-Allow-Credentials: true\r\n"
                           << "Access-Control-Allow-Methods: GET\r\n"
-                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
+                          << "Access-Control-Allow-Headers: "
+                             "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-"
+                             "Modified-Since,Cache-Control,Content-Type\r\n"
                           << "\r\n"
                           << buffer;
             }
@@ -359,7 +364,9 @@ struct Server
                           << "Access-Control-Allow-Origin: *\r\n"
                           << "Access-Control-Allow-Credentials: true\r\n"
                           << "Access-Control-Allow-Methods: GET\r\n"
-                          << "Access-Control-Allow-Headers: DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type\r\n"
+                          << "Access-Control-Allow-Headers: "
+                             "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-"
+                             "Modified-Since,Cache-Control,Content-Type\r\n"
                           << "\r\n"
                           << buffer;
             }

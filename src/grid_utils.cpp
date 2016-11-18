@@ -218,7 +218,7 @@ void write_features(T const &grid_type,
                 k.SetString(attr.c_str(), allocator);
                 rapidjson::Value v;
                 v.SetInt(feature->id());
-                feat[k] = v;
+                feat.AddMember(k, v, allocator);
             }
             else if (feature->has_key(attr))
             {
@@ -226,30 +226,30 @@ void write_features(T const &grid_type,
                 found = true;
                 rapidjson::Value k;
                 k.SetString(attr.c_str(), allocator);
-                rapidjson::Value v;
 
                 const auto val = feature->get(attr);
                 if (val.is<value_integer>())
                 {
                     rapidjson::Value v(val.get<value_integer>());
-                    feat[k] = v;
+                    feat.AddMember(k, v, allocator);
                 }
                 else if (val.is<value_bool>())
                 {
                     rapidjson::Value v(val.get<value_bool>());
-                    feat[k] = v;
+                    feat.AddMember(k, v, allocator);
                 }
                 else if (val.is<value_double>())
                 {
                     rapidjson::Value v(val.get<value_bool>());
-                    feat[k] = v;
+                    feat.AddMember(k, v, allocator);
                 }
                 else if (val.is<value_unicode_string>())
                 {
                     std::string buf;
                     val.get<value_unicode_string>().toUTF8String(buf);
+                    rapidjson::Value v;
                     v.SetString(buf.c_str(), allocator);
-                    feat[k] = v;
+                    feat.AddMember(k, v, allocator);
                 }
             }
         }
@@ -258,7 +258,7 @@ void write_features(T const &grid_type,
         {
             rapidjson::Value v;
             v.SetString(feat_itr->first.c_str(), allocator);
-            feature_data[v] = feat;
+            feature_data.AddMember(v, feat, allocator);
         }
     }
 }
