@@ -50,10 +50,10 @@ namespace mapnik
 {
 
 template <typename T>
-void grid2utf(T const &grid_type,
-              rapidjson::Value &l, // result array
-              std::vector<typename T::lookup_type> &key_order,
-              rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
+void DLL_PUBLIC grid2utf(T const &grid_type,
+                         rapidjson::Value &l, // result array
+                         std::vector<typename T::lookup_type> &key_order,
+                         rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
 {
     using keys_type = std::map<typename T::lookup_type, typename T::value_type>;
     using keys_iterator = typename keys_type::iterator;
@@ -115,11 +115,11 @@ void grid2utf(T const &grid_type,
 }
 
 template <typename T>
-void grid2utf(T const &grid_type,
-              rapidjson::Value &l, // result array
-              std::vector<typename T::lookup_type> &key_order,
-              unsigned int resolution,
-              rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
+void DLL_PUBLIC grid2utf(T const &grid_type,
+                         rapidjson::Value &l, // result array
+                         std::vector<typename T::lookup_type> &key_order,
+                         unsigned int resolution,
+                         rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
 {
     using keys_type = std::map<typename T::lookup_type, typename T::value_type>;
     using keys_iterator = typename keys_type::iterator;
@@ -180,10 +180,10 @@ void grid2utf(T const &grid_type,
 }
 
 template <typename T>
-void write_features(T const &grid_type,
-                    rapidjson::Value &feature_data, // result object
-                    std::vector<typename T::lookup_type> const &key_order,
-                    rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
+void DLL_PUBLIC write_features(T const &grid_type,
+                               rapidjson::Value &feature_data, // result object
+                               std::vector<typename T::lookup_type> const &key_order,
+                               rapidjson::MemoryPoolAllocator<rapidjson::CrtAllocator> &allocator)
 {
     typename T::feature_type const &g_features = grid_type.get_grid_features();
     if (g_features.size() <= 0)
@@ -264,10 +264,10 @@ void write_features(T const &grid_type,
 }
 
 template <typename T>
-void grid_encode_utf(T const &grid_type,
-                     rapidjson::Document &json, // result object
-                     bool add_features,
-                     unsigned int resolution)
+void DLL_PUBLIC grid_encode_utf(T const &grid_type,
+                                rapidjson::Document &json, // result object
+                                bool add_features,
+                                unsigned int resolution)
 {
     // convert buffer to utf and gather key order
     rapidjson::Value l;
@@ -310,7 +310,7 @@ void grid_encode_utf(T const &grid_type,
 }
 
 template <typename T>
-rapidjson::Document
+rapidjson::Document DLL_PUBLIC
 grid_encode(T const &grid, std::string const &format, bool add_features, unsigned int resolution)
 {
     if (format == "utf")
@@ -328,22 +328,22 @@ grid_encode(T const &grid, std::string const &format, bool add_features, unsigne
     }
 }
 
-template rapidjson::Document grid_encode(mapnik::grid const &grid,
-                                         std::string const &format,
-                                         bool add_features,
-                                         unsigned int resolution);
-template rapidjson::Document grid_encode(mapnik::grid_view const &grid,
-                                         std::string const &format,
-                                         bool add_features,
-                                         unsigned int resolution);
+template rapidjson::Document DLL_PUBLIC grid_encode(mapnik::grid const &grid,
+                                                    std::string const &format,
+                                                    bool add_features,
+                                                    unsigned int resolution);
+template rapidjson::Document DLL_PUBLIC grid_encode(mapnik::grid_view const &grid,
+                                                    std::string const &format,
+                                                    bool add_features,
+                                                    unsigned int resolution);
 
-void render_layer_for_grid(mapnik::Map const &map,
-                           mapnik::grid &grid,
-                           unsigned layer_idx,
-                           std::vector<std::string> const &fields,
-                           double scale_factor,
-                           unsigned offset_x,
-                           unsigned offset_y)
+void DLL_PUBLIC render_layer_for_grid(mapnik::Map const &map,
+                                      mapnik::grid &grid,
+                                      unsigned layer_idx,
+                                      std::vector<std::string> const &fields,
+                                      double scale_factor,
+                                      unsigned offset_x,
+                                      unsigned offset_y)
 {
     std::vector<mapnik::layer> const &layers = map.layers();
     std::size_t layer_num = layers.size();

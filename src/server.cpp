@@ -22,6 +22,8 @@
 #include <mapnik/unicode.hpp>
 #include <mapnik/layer.hpp>
 
+#include "vector_tile_processor.hpp"
+
 #include <cmath>
 #include <mutex>
 #include <csignal>
@@ -226,6 +228,22 @@ class TileCache
         }
     }
 
+    std::string getVectorTile(const TileCoordinate &tile)
+    {
+        const auto bbox = getTileBox(tile);
+
+        { // Grab a map from the pool
+            auto map = map_pool.pop();
+            map->resize(256 * tile.scale, 256 * tile.scale);
+            map->zoom_to_box(bbox);
+            mapnik::vector_tile_impl::processor ren(*map);
+            mapnik::vector_tile_impl::tile out_tile =
+                ren.create_tile(tile.x, tile.y, tile.z, 4096, 8);
+            map_pool.push(std::move(map));
+            return out_tile.get_buffer();
+        }
+    }
+
     std::string getTile(const TileCoordinate &tile)
     {
         try
@@ -352,7 +370,7 @@ struct Server
         }
 
         server.resource["^" + (prefix.empty() ? "" : ("/" + prefix)) +
-                        "/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json)$"]
+                        "/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json|mvt)$"]
                        ["GET"] = [this](std::shared_ptr<HttpServer::Response> response,
                                         std::shared_ptr<HttpServer::Request> request) {
 
@@ -402,6 +420,24 @@ struct Server
                 }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: image/png\r\n"
+                          << "Content-Length: " << buffer.length() << "\r\n"
+                          << "Access-Control-Allow-Origin: *\r\n"
+                          << "Access-Control-Allow-Credentials: true\r\n"
+                          << "Access-Control-Allow-Methods: GET\r\n"
+                          << "Access-Control-Allow-Headers: "
+                             "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-"
+                             "Modified-Since,Cache-Control,Content-Type\r\n"
+                          << "\r\n"
+                          << buffer;
+            }
+            else if ("mvt" == format)
+            {
+                {
+                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
+                    buffer = cache->getVectorTile({x, y, z, scale});
+                }
+                *response << "HTTP/1.1 200 OK\r\n"
+                          << "Content-Type: application/vnd.mapbox-vector-tile\r\n"
                           << "Content-Length: " << buffer.length() << "\r\n"
                           << "Access-Control-Allow-Origin: *\r\n"
                           << "Access-Control-Allow-Credentials: true\r\n"
@@ -559,7 +595,7 @@ int main(int argc, char *argv[])
         "port", po::value<int>(&port)->default_value(8080), "TCP port to listen on")(
         "prefix",
         po::value<std::string>(&prefix)->default_value(""),
-        "URL prefix to match [/prefix]/z/x/y.png")(
+        "URL prefix to match [/prefix]/z/x/y.(png|grid.json|mvt)")(
         "threads", po::value<int>(&threads)->default_value(1), "Number of threads")(
         "cache-size",
         po::value<int>(&cache_size)->default_value(1000),
@@ -608,7 +644,7 @@ int main(int argc, char *argv[])
     std::thread reload_thread([&server]() { server.reload_wait(); });
 
     std::clog << "Server started, waiting for requests on port " << server.port() << " at  "
-              << (prefix.empty() ? "" : ("/" + prefix)) + "/{z}/{x}/{y}.(png|grid.json)"
+              << (prefix.empty() ? "" : ("/" + prefix)) + "/{z}/{x}/{y}.(png|grid.json|mvt)"
               << std::endl;
 
     server_thread.join();
