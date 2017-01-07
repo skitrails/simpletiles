@@ -14,6 +14,7 @@ else()
 endif()
 
 find_library(PTHREAD_LIBRARY pthread)
+find_library(SYSTEMD_LIBRARY systemd)
 
 # Mapnik stuff
 
@@ -55,9 +56,9 @@ include_directories("${PROJECT_SOURCE_DIR}/deps/rapidjson-master/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/variant/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/Simple-Web-Server")
 include_directories("${PROJECT_SOURCE_DIR}/deps/rapidxml-1.13")
-include_directories("${PROJECT_SOURCE_DIR}/../mapnik-vector-tile/src")
-include_directories("${PROJECT_SOURCE_DIR}/../mapnik-vector-tile/deps/protozero/include")
-include_directories("${PROJECT_SOURCE_DIR}/../mapnik-vector-tile/deps/clipper/cpp")
+include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/src")
+include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/deps/protozero/include")
+include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/deps/clipper/cpp")
 include_directories(${MAPNIK_INCLUDE_DIR})
 
 # Enable -fvisibility=hidden on object libraries
@@ -66,8 +67,14 @@ cmake_policy(SET CMP0063 NEW)
 add_library(gridutils OBJECT src/grid_utils.cpp)
 set_target_properties(gridutils PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
+if (APPLE)
+  set(MAPNIK_VECTOR_TILE_LIB ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/build/Release/libmapnik_vector_tile_impl.a)
+else()
+  set(MAPNIK_VECTOR_TILE_LIB ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/build/Release/obj.target/gyp/libmapnik_vector_tile_impl.a)
+endif()
+
 add_executable(tileserver src/server.cpp $<TARGET_OBJECTS:gridutils>)
-target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY} ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/build/Release/libmapnik_vector_tile_impl.a)
+target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY} ${MAPNIK_VECTOR_TILE_LIB} ${SYSTEMD_LIBRARY})
 add_dependencies(tileserver mapnik_vector_tile)
 
 set_property(TARGET tileserver PROPERTY CXX_STANDARD 14)

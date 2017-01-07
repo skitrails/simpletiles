@@ -47,6 +47,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <systemd/sd-daemon.h>
+
 // Added for the json-example:
 
 typedef SimpleWeb::Server<SimpleWeb::HTTP> HttpServer;
@@ -238,7 +240,7 @@ class TileCache
             map->zoom_to_box(bbox);
             mapnik::vector_tile_impl::processor ren(*map);
             mapnik::vector_tile_impl::tile out_tile =
-                ren.create_tile(tile.x, tile.y, tile.z, 4096, 8);
+                ren.create_tile(tile.x, tile.y, tile.z, 4096, 64);
             map_pool.push(std::move(map));
             return out_tile.get_buffer();
         }
@@ -494,6 +496,7 @@ struct Server
                 std::clog << mapnik_file << " changed, reloading...";
                 change_detected = true;
                 mapnik_file_timestamp = fileinfo;
+                // Notify systemd that a reload happened
             }
             else
             {
@@ -518,6 +521,7 @@ struct Server
             //   - reload the mapnik objects
             if (change_detected)
             {
+                sd_notify(0, "RELOADING=1");
                 // After noticing a change, keep looking until the file stops
                 // changing - *then* do a reload
                 // This is simple pause to give any file writers a chance to complete.
@@ -556,6 +560,7 @@ struct Server
                     boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
                     cache = tmp;
                     std::clog << "success." << std::endl;
+                    sd_notify(0, "READY=1\nWATCHDOG=1");
                 }
                 catch (const std::exception &e)
                 {
@@ -642,6 +647,8 @@ int main(int argc, char *argv[])
 
     // Give the main server a chance to start before starting the reload thread
     std::thread reload_thread([&server]() { server.reload_wait(); });
+
+    sd_notify(0, "READY=1");
 
     std::clog << "Server started, waiting for requests on port " << server.port() << " at  "
               << (prefix.empty() ? "" : ("/" + prefix)) + "/{z}/{x}/{y}.(png|grid.json|mvt)"
