@@ -26,11 +26,6 @@ execute_process(COMMAND ${MAPNIK_CONFIG} --input-plugins OUTPUT_VARIABLE MAPNIK_
 execute_process(COMMAND ${MAPNIK_CONFIG} --defines OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
 #execute_process(COMMAND ${MAPNIK_CONFIG} --libs OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-add_custom_target(
-   mapnik_vector_tile
-   COMMAND make libvtile
-   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile
-)
 
 add_definitions(${MAPNIK_DEFINES})
 add_definitions(-DMAPNIK_PLUGIN_PATH="${MAPNIK_PLUGIN_PATH}")
@@ -73,9 +68,14 @@ else()
   set(MAPNIK_VECTOR_TILE_LIB ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/build/Release/obj.target/gyp/libmapnik_vector_tile_impl.a)
 endif()
 
+add_custom_command(
+   OUTPUT ${MAPNIK_VECTOR_TILE_LIB}
+   COMMAND make libvtile
+   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile
+)
+
 add_executable(tileserver src/server.cpp $<TARGET_OBJECTS:gridutils>)
 target_link_libraries(tileserver ${MAPNIK_JSON_LIBRARY} ${MAPNIK_WKT_LIBRARY} ${MAPNIK_LIBRARY} ${ICU_LIBRARY} ${Boost_LIBRARIES} ${PTHREAD_LIBRARY} ${MAPNIK_VECTOR_TILE_LIB} ${SYSTEMD_LIBRARY})
-add_dependencies(tileserver mapnik_vector_tile)
 
 set_property(TARGET tileserver PROPERTY CXX_STANDARD 14)
 set_property(TARGET tileserver PROPERTY CXX_STANDARD_REQUIRED ON)

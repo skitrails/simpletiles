@@ -248,28 +248,20 @@ class TileCache
 
     std::string getTile(const TileCoordinate &tile)
     {
-        try
-        {
-            return cache.get(tile);
-        }
-        catch (const lru11::KeyNotFound &e)
-        {
-            mapnik::image_rgba8 im(256 * tile.scale, 256 * tile.scale);
-            const auto bbox = getTileBox(tile);
+        mapnik::image_rgba8 im(256 * tile.scale, 256 * tile.scale);
+        const auto bbox = getTileBox(tile);
 
-            {
-                // Grab a map from the pool
-                auto map = map_pool.pop();
-                map->resize(256 * tile.scale, 256 * tile.scale);
-                map->zoom_to_box(bbox);
-                mapnik::agg_renderer<mapnik::image_rgba8> renderer(*map, im);
-                renderer.apply();
-                // return the map to the pool
-                map_pool.push(std::move(map));
-            }
+        {
+            // Grab a map from the pool
+            auto map = map_pool.pop();
+            map->resize(256 * tile.scale, 256 * tile.scale);
+            map->zoom_to_box(bbox);
+            mapnik::agg_renderer<mapnik::image_rgba8> renderer(*map, im);
+            renderer.apply();
+            // return the map to the pool
+            map_pool.push(std::move(map));
 
             auto buffer = mapnik::save_to_string(im, "png");
-            cache.insert(tile, buffer);
             return buffer;
         }
     }
@@ -493,7 +485,7 @@ struct Server
             // Check to see if any of our files have changed
             if (fileinfo.st_mtime > mapnik_file_timestamp.st_mtime)
             {
-                std::clog << mapnik_file << " changed, reloading...";
+                std::clog << mapnik_file << " changed, initiating reload" << std::endl;
                 change_detected = true;
                 mapnik_file_timestamp = fileinfo;
                 // Notify systemd that a reload happened
@@ -506,7 +498,7 @@ struct Server
                     ::stat(finfo.first.c_str(), &tmpinfo);
                     if (tmpinfo.st_mtime > finfo.second.st_mtime)
                     {
-                        std::clog << finfo.first << " changed, reloading... ";
+                        std::clog << finfo.first << " changed, initiating" << std::endl;
                         change_detected = true;
                         dependent_timestamps[finfo.first] = tmpinfo;
                     }
@@ -525,11 +517,12 @@ struct Server
                 // After noticing a change, keep looking until the file stops
                 // changing - *then* do a reload
                 // This is simple pause to give any file writers a chance to complete.
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                std::clog << std::flush;
                 bool something_changed = false;
                 do
                 {
+                    std::clog << "Waiting for files to stop changing " << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    std::clog << std::flush;
                     something_changed = false;
                     // Check to see if any of our files have changed
                     if (fileinfo.st_mtime > mapnik_file_timestamp.st_mtime)
@@ -555,11 +548,14 @@ struct Server
                 // Now, re-initialize mapnik
                 try
                 {
+                    std::clog << "Beginning reload " << std::endl;
                     auto tmp =
                         std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size);
+                    std::clog << "New mapnik instances created, obtaining swap lock" << std::endl;
                     boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
                     cache = tmp;
-                    std::clog << "success." << std::endl;
+                    std::clog << "Swap completed" << std::endl;
+                    std::clog << "reload success." << std::endl;
                     sd_notify(0, "READY=1\nWATCHDOG=1");
                 }
                 catch (const std::exception &e)
