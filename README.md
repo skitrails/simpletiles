@@ -25,13 +25,13 @@ Tiles become available at `http://localhost:8080/z/x/y.png`
 There are a few basic things you can tune:
 
 | option | Description |
-|--------|--|
-| --help | show help |
-| --port NUM | listen on TCP port NUM instead of the default 8080 |
-| --prefix ARG | Answer requests at /prefix/z/x/y.png instead of /z/x/y.png |
-| --threads NUM | Run NUM worker threads.  Defaults to 1, adjust for performance |
-| --cache-size NUM | How many tiles to cache in RAM - default is 1000 |
-| --mapnik-file FILENAME | Long-form way to specify the filename |
+|--------|-------------|
+| `--help` | show help |
+| `--port NUM` | listen on TCP port NUM instead of the default 8080 |
+| `--prefix ARG` | Answer requests at /prefix/z/x/y.png instead of /z/x/y.png |
+| `--threads NUM` | Run NUM worker threads.  Defaults to 1, adjust for performance |
+| `--cache-size NUM` | How many tiles to cache in RAM - default is 1000 |
+| `--mapnik-file FILENAME` | Long-form way to specify the filename |
 
 # Reloading
 
