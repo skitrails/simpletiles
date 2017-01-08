@@ -1,5 +1,7 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required (VERSION 3.1)
 project (tileserver)
+
+set (CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
@@ -15,6 +17,14 @@ endif()
 
 find_library(PTHREAD_LIBRARY pthread)
 find_library(SYSTEMD_LIBRARY systemd)
+if (SYSTEMD_LIBRARY)
+  find_file(SYSTEMD_INCLUDE systemd/sd-daemon.h)
+  if (NOT SYSTEMD_INCLUDE)
+    message("WARNING: found systemd libraries, but not sd-daemon.h.  Not enabling systemd integration")
+  else()
+    add_definitions(-DHAS_SYSTEMD)
+  endif()
+endif()
 
 # Mapnik stuff
 
@@ -25,10 +35,12 @@ endif()
 execute_process(COMMAND ${MAPNIK_CONFIG} --input-plugins OUTPUT_VARIABLE MAPNIK_PLUGIN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${MAPNIK_CONFIG} --defines OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
 #execute_process(COMMAND ${MAPNIK_CONFIG} --libs OUTPUT_VARIABLE MAPNIK_DEFINES OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${MAPNIK_CONFIG} --fonts OUTPUT_VARIABLE MAPNIK_FONTS_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 
 add_definitions(${MAPNIK_DEFINES})
 add_definitions(-DMAPNIK_PLUGIN_PATH="${MAPNIK_PLUGIN_PATH}")
+add_definitions(-DMAPNIK_FONTS_PATH="${MAPNIK_FONTS_PATH}")
 
 add_definitions(-DMAPNIK_VECTOR_TILE_LIBRARY=1)
 add_definitions("-DCLIPPER_INTPOINT_IMPL=mapnik::geometry::point<cInt>")
@@ -54,7 +66,7 @@ include_directories("${PROJECT_SOURCE_DIR}/deps/rapidxml-1.13")
 include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/src")
 include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/deps/protozero/include")
 include_directories("${PROJECT_SOURCE_DIR}/deps/mapnik-vector-tile/deps/clipper/cpp")
-include_directories(${MAPNIK_INCLUDE_DIR})
+include_directories(SYSTEM ${MAPNIK_INCLUDE_DIR})
 
 # Enable -fvisibility=hidden on object libraries
 cmake_policy(SET CMP0063 NEW)

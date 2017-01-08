@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <shared_mutex>
+#include <mutex>
 
 #include <mapnik/box2d.hpp>
 #include <mapnik/map.hpp>
@@ -28,7 +29,6 @@
 #include <mutex>
 #include <csignal>
 
-#include "LRUCache11.hpp"
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
 #include "rapidjson/stringbuffer.h"
@@ -47,7 +47,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef HAS_SYSTEMD
 #include <systemd/sd-daemon.h>
+#endif // HAS_SYSTEMD
 
 // Added for the json-example:
 
@@ -131,22 +133,39 @@ template <typename T> class BlockingQueue
     int size() { return d_queue.size(); }
 };
 
-class TileCache
+template <typename T>
+class QueueObject
+{
+  public:
+
+  QueueObject(BlockingQueue<T> &queue_) : queue{queue_}, obj{queue.pop()} { }
+
+  ~QueueObject() {
+      queue.push(std::move(obj));
+  }
+
+  T &get() {
+      return obj;
+  }
+
+  private:
+
+  BlockingQueue<T> &queue;
+  T obj;
+};
+
+class PooledRenderer
 {
 
-    int mapcount = 0;
     BlockingQueue<std::shared_ptr<mapnik::Map>> map_pool;
-    lru11::Cache<TileCoordinate, std::string, std::mutex> cache;
 
   public:
-    TileCache(const std::vector<std::shared_ptr<mapnik::Map>> &maps_, const int cache_size = 1000)
-        : cache(cache_size, 100)
+    PooledRenderer(const std::vector<std::shared_ptr<mapnik::Map>> &maps_)
     {
         for (auto &map : maps_)
         {
             map_pool.push(map);
         }
-        mapcount = maps_.size();
     }
 
     mapnik::box2d<double> getTileBox(const TileCoordinate &coord)
@@ -210,15 +229,14 @@ class TileCache
         const auto bbox = getTileBox(tile);
         {
             // Grab a map from the pool
-            auto map = map_pool.pop();
-            map->resize(256 * tile.scale, 256 * tile.scale);
-            map->zoom_to_box(bbox);
-            const auto interactivity_layer_id = getInteractiveLayerID(*map);
-            std::vector<std::string> fields = getInteractiveFields(*map);
+            QueueObject<std::shared_ptr<mapnik::Map>> map(map_pool);
+            map.get()->resize(256 * tile.scale, 256 * tile.scale);
+            map.get()->zoom_to_box(bbox);
+            const auto interactivity_layer_id = getInteractiveLayerID(*map.get());
+            std::vector<std::string> fields = getInteractiveFields(*map.get());
             mapnik::grid grid(256, 256, fields.front());
             mapnik::render_layer_for_grid(
-                *map, grid, interactivity_layer_id, fields, tile.scale, 0, 0);
-            map_pool.push(std::move(map));
+                *map.get(), grid, interactivity_layer_id, fields, tile.scale, 0, 0);
 
             auto document = mapnik::grid_encode(grid, "utf", true, 4);
 
@@ -235,13 +253,12 @@ class TileCache
         const auto bbox = getTileBox(tile);
 
         { // Grab a map from the pool
-            auto map = map_pool.pop();
-            map->resize(256 * tile.scale, 256 * tile.scale);
-            map->zoom_to_box(bbox);
-            mapnik::vector_tile_impl::processor ren(*map);
+            QueueObject<std::shared_ptr<mapnik::Map>> map(map_pool);
+            map.get()->resize(256 * tile.scale, 256 * tile.scale);
+            map.get()->zoom_to_box(bbox);
+            mapnik::vector_tile_impl::processor ren(*map.get());
             mapnik::vector_tile_impl::tile out_tile =
                 ren.create_tile(tile.x, tile.y, tile.z, 4096, 64);
-            map_pool.push(std::move(map));
             return out_tile.get_buffer();
         }
     }
@@ -253,13 +270,11 @@ class TileCache
 
         {
             // Grab a map from the pool
-            auto map = map_pool.pop();
-            map->resize(256 * tile.scale, 256 * tile.scale);
-            map->zoom_to_box(bbox);
-            mapnik::agg_renderer<mapnik::image_rgba8> renderer(*map, im);
+            QueueObject<std::shared_ptr<mapnik::Map>> map(map_pool);
+            map.get()->resize(256 * tile.scale, 256 * tile.scale);
+            map.get()->zoom_to_box(bbox);
+            mapnik::agg_renderer<mapnik::image_rgba8> renderer(*map.get(), im);
             renderer.apply();
-            // return the map to the pool
-            map_pool.push(std::move(map));
 
             auto buffer = mapnik::save_to_string(im, "png");
             return buffer;
@@ -279,6 +294,7 @@ struct Server
         {
             auto map = std::make_shared<mapnik::Map>(256, 256);
             mapnik::load_map(*map, mapnik_file);
+            map->load_fonts();
             maps.push_back(std::move(map));
         }
         return maps;
@@ -286,12 +302,11 @@ struct Server
 
     const std::string &mapnik_file;
     const int threads;
-    const int cache_size;
     const std::string &prefix;
-    std::shared_ptr<TileCache> cache;
+    std::shared_ptr<PooledRenderer> renderpool;
 
     // Data needed for auto reloads
-    boost::shared_mutex reload_mutex;
+    std::shared_timed_mutex reload_mutex;
     struct stat mapnik_file_timestamp;
     std::unordered_map<std::string, struct stat> dependent_timestamps;
 
@@ -345,11 +360,10 @@ struct Server
     Server(const std::string &mapnik_file_,
            const std::string &prefix_,
            const int port = 8080,
-           const int threads_ = 1,
-           const int cache_size_ = 1000)
+           const int threads_ = 1)
         : server(port, threads_), mapnik_file(mapnik_file_), threads(threads_),
-          cache_size(cache_size_), prefix(prefix_),
-          cache(std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size))
+          prefix(prefix_),
+          renderpool(std::make_shared<PooledRenderer>(makeMaps(mapnik_file, threads)))
     {
 
         // file_modify_times = getFileTimes(mapnik_file);
@@ -362,6 +376,10 @@ struct Server
             ::stat(fname.c_str(), &tmp_stat);
             dependent_timestamps[fname] = tmp_stat;
         }
+
+        server.exception_handler = [](const std::exception &e) {
+            std::clog << "ERROR during request: " << e.what() << std::endl;
+        };
 
         server.resource["^" + (prefix.empty() ? "" : ("/" + prefix)) +
                         "/([0-9]+)/([0-9]+)/([0-9]+)(@([123])x)?.(png|grid.json|mvt)$"]
@@ -409,8 +427,13 @@ struct Server
             if ("png" == format)
             {
                 {
-                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
-                    buffer = cache->getTile({x, y, z, scale});
+                    using namespace std::literals::chrono_literals;
+                    std::shared_lock<std::shared_timed_mutex> lock(reload_mutex,500ms);
+                    if (lock) {
+                        buffer = renderpool->getTile({x, y, z, scale});
+                    } else {
+                        std::clog << "ERROR: timed out waiting for reload mutex wrapping getTile()" << std::endl;
+                    }
                 }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: image/png\r\n"
@@ -427,8 +450,13 @@ struct Server
             else if ("mvt" == format)
             {
                 {
-                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
-                    buffer = cache->getVectorTile({x, y, z, scale});
+                    using namespace std::literals::chrono_literals;
+                    std::shared_lock<std::shared_timed_mutex> lock(reload_mutex,500ms);
+                    if (lock) {
+                        buffer = renderpool->getVectorTile({x, y, z, scale});
+                    } else {
+                        std::clog << "ERROR: timed out waiting for reload mutex wrapping getTile()" << std::endl;
+                    }
                 }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: application/vnd.mapbox-vector-tile\r\n"
@@ -445,8 +473,13 @@ struct Server
             else
             {
                 {
-                    boost::shared_lock<boost::shared_mutex> lock(reload_mutex);
-                    buffer = cache->getGrid({x, y, z, scale});
+                    using namespace std::literals::chrono_literals;
+                    std::shared_lock<std::shared_timed_mutex> lock(reload_mutex,500ms);
+                    if (lock) {
+                        buffer = renderpool->getGrid({x, y, z, scale});
+                    } else {
+                        std::clog << "ERROR: timed out waiting for reload mutex wrapping getTile()" << std::endl;
+                    }
                 }
                 *response << "HTTP/1.1 200 OK\r\n"
                           << "Content-Type: text/json\r\n"
@@ -498,7 +531,7 @@ struct Server
                     ::stat(finfo.first.c_str(), &tmpinfo);
                     if (tmpinfo.st_mtime > finfo.second.st_mtime)
                     {
-                        std::clog << finfo.first << " changed, initiating" << std::endl;
+                        std::clog << finfo.first << " changed, initiating reload" << std::endl;
                         change_detected = true;
                         dependent_timestamps[finfo.first] = tmpinfo;
                     }
@@ -513,16 +546,16 @@ struct Server
             //   - reload the mapnik objects
             if (change_detected)
             {
+#ifdef HAS_SYSTEMD
                 sd_notify(0, "RELOADING=1");
+#endif // HAS_SYSTEMD
                 // After noticing a change, keep looking until the file stops
                 // changing - *then* do a reload
                 // This is simple pause to give any file writers a chance to complete.
                 bool something_changed = false;
                 do
                 {
-                    std::clog << "Waiting for files to stop changing " << std::endl;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                    std::clog << std::flush;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
                     something_changed = false;
                     // Check to see if any of our files have changed
                     if (fileinfo.st_mtime > mapnik_file_timestamp.st_mtime)
@@ -540,6 +573,7 @@ struct Server
                             {
                                 something_changed = true;
                                 dependent_timestamps[finfo.first] = tmpinfo;
+                                break;
                             }
                         }
                     }
@@ -548,31 +582,32 @@ struct Server
                 // Now, re-initialize mapnik
                 try
                 {
-                    std::clog << "Beginning reload " << std::endl;
                     auto tmp =
-                        std::make_shared<TileCache>(makeMaps(mapnik_file, threads), cache_size);
-                    std::clog << "New mapnik instances created, obtaining swap lock" << std::endl;
-                    boost::unique_lock<boost::shared_mutex> lock(reload_mutex);
-                    cache = tmp;
-                    std::clog << "Swap completed" << std::endl;
-                    std::clog << "reload success." << std::endl;
-                    sd_notify(0, "READY=1\nWATCHDOG=1");
+                        std::make_shared<PooledRenderer>(makeMaps(mapnik_file, threads));
+                    {
+                      std::lock_guard<std::shared_timed_mutex> lock(reload_mutex);
+                      std::swap(renderpool,tmp);
+                    }
+                    // Get a fresh list of dependents from the mapnik file, in case
+                    // it changed.
+                    dependent_timestamps.clear();
+                    for (const auto &fname : dependentFilenames(mapnik_file))
+                    {
+                        struct stat tmpinfo;
+                        ::stat(fname.c_str(), &tmpinfo);
+                        dependent_timestamps[fname] = tmpinfo;
+                    }
                 }
                 catch (const std::exception &e)
                 {
                     std::clog << "ERROR: " << e.what() << std::endl;
+                    std::clog << "Will retry shortly." << std::endl;
                 }
-
-                // Get a fresh list of dependents from the mapnik file, in case
-                // it changed.
-                dependent_timestamps.clear();
-                for (const auto &fname : dependentFilenames(mapnik_file))
-                {
-                    struct stat tmpinfo;
-                    ::stat(fname.c_str(), &tmpinfo);
-                    dependent_timestamps[fname] = tmpinfo;
-                }
+#ifdef HAS_SYSTEMD
+                sd_notify(0, "READY=1\nWATCHDOG=1");
+#endif // HAS_SYSTEMD
             }
+
         }
     }
 
@@ -636,15 +671,18 @@ int main(int argc, char *argv[])
     }
 
     mapnik::datasource_cache::instance().register_datasources(MAPNIK_PLUGIN_PATH);
+    mapnik::freetype_engine::register_fonts(MAPNIK_FONTS_PATH, true);
 
-    Server server(mapnik_file, prefix, port, threads, cache_size);
+    Server server(mapnik_file, prefix, port, threads);
 
     std::thread server_thread([&server]() { server.start(); });
 
     // Give the main server a chance to start before starting the reload thread
     std::thread reload_thread([&server]() { server.reload_wait(); });
 
+#ifdef HAS_SYSTEMD
     sd_notify(0, "READY=1");
+#endif // HAS_SYSTEMD
 
     std::clog << "Server started, waiting for requests on port " << server.port() << " at  "
               << (prefix.empty() ? "" : ("/" + prefix)) + "/{z}/{x}/{y}.(png|grid.json|mvt)"
