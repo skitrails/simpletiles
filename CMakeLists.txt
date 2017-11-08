@@ -16,7 +16,6 @@ else()
 endif()
 
 find_library(PTHREAD_LIBRARY pthread)
-find_library(SYSTEMD_LIBRARY systemd)
 if (SYSTEMD_LIBRARY)
   find_file(SYSTEMD_INCLUDE systemd/sd-daemon.h)
   if (NOT SYSTEMD_INCLUDE)
